@@ -18,37 +18,37 @@
 void swap_cols(unsigned int *p, unsigned int i, unsigned int j);
 
 /* Backsolving of a trianglular system. */
-void back_solve(double **mat, double *rhs, unsigned int rows,
-		unsigned int cols, double *sol, unsigned int *p);
+void back_solve(float **mat, float *rhs, unsigned int rows,
+		unsigned int cols, float *sol, unsigned int *p);
 
 /* Apply a Householder transform to the matrix at a given spot. */
-void householder(double **mat, unsigned int rows, unsigned int cols,
-		 unsigned int row_pos, unsigned int col_pos, double *result);
+void householder(float **mat, unsigned int rows, unsigned int cols,
+		 unsigned int row_pos, unsigned int col_pos, float *result);
 
 /* Routine for applying the Householder transform to the matrix and the 
  * right hand side. */
-void apply_householder(double **mat, double *rhs, unsigned int rows, 
-		       unsigned int cols, double *house, unsigned int row_pos,
+void apply_householder(float **mat, float *rhs, unsigned int rows, 
+		       unsigned int cols, float *house, unsigned int row_pos,
 		       unsigned int *p);
 
 /* Get the column with the largest sub-norm starting from i = p[j] = row_pos. */
-int get_next_col(double **mat, unsigned int rows, unsigned int cols,
+int get_next_col(float **mat, unsigned int rows, unsigned int cols,
 			  unsigned int row_pos, unsigned int *p);
 
 /* Solve the least squares problem, sol = mat\rhs . */
-void qr_least_squares(double **mat, double *rhs, double *sol, 
+void qr_least_squares(float **mat, float *rhs, float *sol, 
 		      unsigned int rows, unsigned int cols);
 
 /* A simple matrix-vector product routine. */
-void mat_vec(double **mat, unsigned int rows, unsigned int cols,
-	     double *vec, double *rhs);
+void mat_vec(float **mat, unsigned int rows, unsigned int cols,
+	     float *vec, float *rhs);
 
 /* Routine for displaying a matrix. */
-void display_mat(double **mat, unsigned int rows, unsigned int cols,
+void display_mat(float **mat, unsigned int rows, unsigned int cols,
 		 unsigned int *p);
 
 /* Routine for displaying a vector. */
-void display_vec(double *vec, unsigned int rows, unsigned int *p);
+void display_vec(float *vec, unsigned int rows, unsigned int *p);
 
 void swap_cols(unsigned int *p, unsigned int i, unsigned int j)
 {
@@ -58,11 +58,11 @@ void swap_cols(unsigned int *p, unsigned int i, unsigned int j)
   p[j] = temp;
 }
 
-void back_solve(double **mat, double *rhs, unsigned int rows,
-		unsigned int cols, double *sol, unsigned int *p)
+void back_solve(float **mat, float *rhs, unsigned int rows,
+		unsigned int cols, float *sol, unsigned int *p)
 {
   int i, j, bottom;
-  double sum;
+  float sum;
 
   /* Fill the solution with zeros initially. */
   for(i = 0; i < cols; i++)
@@ -92,11 +92,11 @@ void back_solve(double **mat, double *rhs, unsigned int rows,
     }
 }
 
-void householder(double **mat, unsigned int rows, unsigned int cols,
-		 unsigned int row_pos, unsigned int col_pos, double *result)
+void householder(float **mat, unsigned int rows, unsigned int cols,
+		 unsigned int row_pos, unsigned int col_pos, float *result)
 {
   int i;
-  double norm;
+  float norm;
 
   norm = 0;
   for(i = row_pos; i < rows; i++)
@@ -125,27 +125,27 @@ void householder(double **mat, unsigned int rows, unsigned int cols,
     result[i] *= (1.0/norm);
 }
 
-void apply_householder(double **mat, double *rhs, unsigned int rows, unsigned int cols, double *house, unsigned int row_pos, unsigned int *p)
+void apply_householder(float **mat, float *rhs, unsigned int rows, unsigned int cols, float *house, unsigned int row_pos, unsigned int *p)
 {
   int i, j, k, n;
-  double sum;
-  double **hhmat;
-  double **mat_cpy;
-  double *rhs_cpy;
+  float sum;
+  float **hhmat;
+  float **mat_cpy;
+  float *rhs_cpy;
 
   // Get the dimensions for the Q matrix.
   n = rows - row_pos;
 
   // Allocate memory.
-  hhmat = malloc(sizeof(double *)*n);
+  hhmat = malloc(sizeof(float *)*n);
   for(i = 0; i < n; i++)
-    hhmat[i] = malloc(sizeof(double)*n);
+    hhmat[i] = malloc(sizeof(float)*n);
 
-  mat_cpy = malloc(sizeof(double *)*rows);
+  mat_cpy = malloc(sizeof(float *)*rows);
   for(i = 0; i < rows; i++)
-    mat_cpy[i] = malloc(sizeof(double)*cols);
+    mat_cpy[i] = malloc(sizeof(float)*cols);
 
-  rhs_cpy = malloc(sizeof(double )*rows);
+  rhs_cpy = malloc(sizeof(float )*rows);
   
   // Copy the matrix.
   for(i = 0; i < rows; i++)
@@ -197,15 +197,15 @@ void apply_householder(double **mat, double *rhs, unsigned int rows, unsigned in
   free(rhs_cpy);
 }
 
-int get_next_col(double **mat, unsigned int rows, unsigned int cols,
+int get_next_col(float **mat, unsigned int rows, unsigned int cols,
 			  unsigned int row_pos, unsigned int *p)
 {
   int i, j, max_loc;
-  double *col_norms;
-  double max;
+  float *col_norms;
+  float max;
 
   max_loc = -1;
-  col_norms = malloc(sizeof(double)*cols);
+  col_norms = malloc(sizeof(float)*cols);
 
   // Compute the norms of the sub columns.
   for(j = 0; j < cols; j++)
@@ -244,16 +244,16 @@ int get_next_col(double **mat, unsigned int rows, unsigned int cols,
  * the solution x corresponds to the solution of both the modified and original
  * systems. Please be aware of this.
  */
-void qr_least_squares(double **mat, double *rhs, double *sol, 
+void qr_least_squares(float **mat, float *rhs, float *sol, 
 		      unsigned int rows, unsigned int cols)
 {
   int i, max_loc;
   unsigned int *p;
-  double *v;
+  float *v;
 
   /* Allocate memory for index vector and Householder transform vector. */
   p = malloc(sizeof(unsigned int)*cols);
-  v = malloc(sizeof(double)*rows);
+  v = malloc(sizeof(float)*rows);
 
   /* Initial permutation vector. */
   for(i = 0; i < cols; i++)
@@ -279,11 +279,11 @@ void qr_least_squares(double **mat, double *rhs, double *sol,
 }
 
 /* A very simple matrix vector product routine. */
-void mat_vec(double **mat, unsigned int rows, unsigned int cols,
-	     double *vec, double *rhs)
+void mat_vec(float **mat, unsigned int rows, unsigned int cols,
+	     float *vec, float *rhs)
 {
   int i, j;
-  double sum;
+  float sum;
 
   for(i =  0; i < rows; i++)
     {

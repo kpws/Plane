@@ -1,5 +1,6 @@
 import serial
 import struct
+import numpy as np
 
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
@@ -15,6 +16,8 @@ class Vec3:
         return Vec3(self.x*a,self.y*a,self.z*a)
     def __add__(self,a):
         return Vec3(self.x+a.x,self.y+a.y,self.z+a.z)
+    def norm(self):
+        return np.sqrt(self.x*self.x+self.y*self.y+self.z*self.z)
 
 class Plane:
     def __init__(self):
@@ -29,10 +32,10 @@ class Plane:
     def update(self):
         dat=self.ser.readline()[:-1].split(',')
         if dat[0]=='start' and len(dat)>=12:
-            #print dat
+           # print dat
             try:
-                self.A=self.A*0.0+Vec3(*map(int,dat[1:4]))*1.0
-                self.M=self.M*0.0+Vec3(*map(int,dat[4:7]))*1.0
+                self.A=self.A*0.0+Vec3(*map(float,dat[1:4]))*1.0
+                self.M=self.M*0.0+Vec3(*map(float,dat[4:7]))*1.0
                 self.P=self.P*0.0+Vec3(0,0,float(dat[7]))*1.0
                 self.T=float(dat[8])
                 self.G=self.G*0.0+Vec3(*map(int,dat[9:12]))*1.0
@@ -53,12 +56,12 @@ class Plane:
         glColor3f(0,1,0)
         glBegin(GL_LINES)
         glVertex3f(0,0,0)
-        (self.A*0.004).vert()
+        (self.A*3).vert()
         glEnd()
         glColor3f(1,0,0)
         glBegin(GL_LINES)
         glVertex3f(0,0,0)
-        (self.M*0.01).vert()
+        (self.M*3).vert()
         glEnd()
         
         glColor3f(1,1,0)
@@ -141,11 +144,15 @@ def display():
     
     glPushMatrix();
     glLoadIdentity();
-    glRasterPos2f( 5,30);
-    glColor4f(0, 0, 1, 1);
+    glColor4f(1, 0, 0, 1);
+    glRasterPos2f( 5,5);
     glutBitmapString(GLUT_BITMAP_9_BY_15, 'Altitude: '+str(plane.P.z)+' m');
-    glRasterPos2f( 5,60);
+    glRasterPos2f( 5,15);
     glutBitmapString(GLUT_BITMAP_9_BY_15, 'Temperature: '+str(plane.T)+' C');
+    glRasterPos2f( 5,25);
+    glutBitmapString(GLUT_BITMAP_9_BY_15, 'Acceleration: '+str(plane.A.norm()));
+    glRasterPos2f( 5,35);
+    glutBitmapString(GLUT_BITMAP_9_BY_15, 'Magnetic field: '+str(plane.M.norm()));
     glPopMatrix()
 
     glMatrixMode(GL_PROJECTION);
