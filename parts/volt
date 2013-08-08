@@ -1,0 +1,11 @@
+Voltage:
+
+Arduino Board: 7-12 (6-20)
+Servo: 4.8-6.0 , 3.7-5.0
+Motor:
+
+Current:
+
+Arduino Board: ~100 mA
+Servo: 4x100 mA
+Total: 500 mA
