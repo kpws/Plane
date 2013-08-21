@@ -5,7 +5,7 @@
 #include <LSM303.h>
 #include <L3G.h>
 
-#define COMMUNICATE
+//#define COMMUNICATE
 
 #include "qr_fact.c"
 #include "orientation.c"
@@ -20,16 +20,20 @@ const int CAL_MEANS=20;
 //const int N_SUN_SENSORS=8;
 const float GYRO_SENS=17.5e-3*PI/180.;
 const int GREEN_LED = 13;
-/*
-   const int lEngine=0;
-   const int rEngine=1;
-   const int lAileron=2;
-   const int rAileron=3;
-   const int lElev=4;
-   const int rElev=5;
-   const int N_SERVOS=6;
-   */
-//Servo servos[N_SERVOS];
+
+const float phi=12./180.*PI;
+const float cosPhi=cos(phi);
+const float sinPhi=sin(phi);
+
+const float roll[4] = {-0.67125, -0.222314, -0.222314, -0.67125};
+const float pitch[4] = {0.402761, 0.581192, -0.581192, -0.402761};
+
+const float P=30.;
+const float I=1..;
+const float D=1.;
+const float integrateMax=0.5;
+const float maxCSus=50.*500./90.; //Max 50 degrees control surface tilt, 500 microseconds/90 degrees
+Servo servos[4];
 
 LPS331 ps;
 LSM303 compass;
@@ -53,6 +57,14 @@ float B[3],A[3],G[3];//,S[3];
 float pressure,psAltitude,psTemperature;
 
 float q[4];
+float qw[4];
+
+float i_roll;
+float i_pitch;
+
+float u_roll;
+float u_pitch;
+float u_skew;
 
 #include "calibrate.cpp"
 //#include "sensors.c"
@@ -63,17 +75,24 @@ void setup()
 #ifdef COMMUNICATE
     Serial.begin(115200);
 #endif
-    for(float i=80;i<1500.;i*=1.1)
+   /* for(float i=80;i<1500.;i*=1.1)
     {
 
         tone(8,i,30);
         delay(30);
         tone(8,i*2,30);
         delay(30);
-    }
+    }*/
 
-    //for(int i=0;i<N_SERVOS;i++)
-    //    servos[i].attach(8);
+    servos[0].attach(10);
+    servos[1].attach(9);
+    servos[2].attach(12);
+    servos[3].attach(11);
+    for(int i=0;i<4;i++)
+    {
+        servos[i].writeMicroseconds(1500);
+    }
+    delay(1000);
 
     Wire.begin();
 
@@ -95,22 +114,33 @@ void setup()
     //julianDate=yymmdd_to_julian_days(2013,7,22);
     //float field[6];
     //SGMagVar(latitude,longitude,altitude/1000.,julianDate,11,field);
-    Be[0]=15740.9;
-    Be[1]=1179.2; //nT, Linkoping, 2013.4, IGRF11
-    Be[2]=-48455.2;
+
+
+    //./geomag70.exe IGRF11.COF 2013.5 D M0.0 58.4000 15.6167
+    Be[0]=  15741.8;
+    Be[1]= 1182.2; //nT, Liljegatan, Linköping, 2013.5, IGRF11
+    Be[2]= 48459.7;
     float Bem=sqrt(Be[0]*Be[0]+Be[1]*Be[1]+Be[2]*Be[2]);
     for(int i=0;i<3;i++)
         Be[i]/=Bem; 
 
     Ae[0]=0.;
     Ae[1]=0.;
-    Ae[2]=1.;
+    Ae[2]=-1.;
 
     q[0]=1.;
     q[1]=0.;
     q[2]=0.;
     q[3]=0.;
 
+    qw[0]=1.;
+    qw[1]=0.;
+    qw[2]=0.;
+    qw[3]=0.;
+
+    i_roll=0.;
+    i_pitch=0.;
+    
     lmi=0;
 
     mode=CALIBRATE;
@@ -162,18 +192,28 @@ void loop()
 
 
     /////////////////////////////CONVERT SENSORS VALUES TO PHYSICAL QUANTITIES//////////////////
+    float Lx,Ly,Lz;
 
-    A[0]=((float)compass.a.x-calVal[0][0])/calVal[0][3];
-    A[1]=((float)compass.a.y-calVal[0][1])/calVal[0][4];
-    A[2]=((float)compass.a.z-calVal[0][2])/calVal[0][5];
+    Lx=((float)compass.a.x-calVal[0][0])/calVal[0][3];
+    Ly=((float)compass.a.y-calVal[0][1])/calVal[0][4];
+    Lz=((float)compass.a.z-calVal[0][2])/calVal[0][5];
+    A[0] = -Lx*cosPhi + sinPhi*Lz;
+    A[1] = Ly;
+    A[2] = -Lx*sinPhi - cosPhi*Lz;
 
-    B[0]=((float)compass.m.x-calVal[1][0])/calVal[1][3];
-    B[1]=((float)compass.m.y-calVal[1][1])/calVal[1][4];
-    B[2]=((float)compass.m.z-calVal[1][2])/calVal[1][5];
+    Lx=((float)compass.m.x-calVal[1][0])/calVal[1][3];
+    Ly=((float)compass.m.y-calVal[1][1])/calVal[1][4];
+    Lz=((float)compass.m.z-calVal[1][2])/calVal[1][5];
+    B[0] = -Lx*cosPhi + sinPhi*Lz;
+    B[1] = Ly;
+    B[2] = -Lx*sinPhi - cosPhi*Lz;
 
-    G[0]=(((float)gyro.g.x)-Gc[0])*GYRO_SENS;
-    G[1]=(((float)gyro.g.y)-Gc[1])*GYRO_SENS;
-    G[2]=(((float)gyro.g.z)-Gc[2])*GYRO_SENS;
+    Lx=(((float)gyro.g.x)-Gc[0])*GYRO_SENS;
+    Ly=(((float)gyro.g.y)-Gc[1])*GYRO_SENS;
+    Lz=(((float)gyro.g.z)-Gc[2])*GYRO_SENS;
+    G[0] = -Lx*cosPhi + sinPhi*Lz;
+    G[1] = Ly;
+    G[2] = -Lx*sinPhi - cosPhi*Lz;
 
     psAltitude = ps.pressureToAltitudeMeters(pressure);
 
@@ -226,7 +266,7 @@ void loop()
     
     ////////////////////////////////////OUTPUT SERIAL DATA/////////////////////////
 #ifdef COMMUNICATE
-   /* Serial.print("start,");
+      Serial.print("start,");
       for(int i=0;i<3;i++)
       {
       Serial.print(A[i]);
@@ -248,7 +288,7 @@ void loop()
       Serial.print(G[1]);
       Serial.print(",");
       Serial.println(G[2]);
-     */ 
+      
     Serial.print("orient,");
     for(int i=0;i<4;i++)
     {
@@ -259,6 +299,37 @@ void loop()
 #endif
     ///////////////////////////////CALCULATE PHYSICAL OUTPUTS////////////////
 
+    float e[4];
+    //e=q^\bar qw
+    e[0] = q[0]*qw[0] + q[1]*qw[1] + q[2]*qw[2] + q[3]*qw[3];
+    e[1] = q[0]*qw[1] - q[1]*qw[0] - q[2]*qw[3] + q[3]*qw[2];
+    e[2] = q[0]*qw[2] + q[1]*qw[3] - q[2]*qw[0] - q[3]*qw[1];
+    e[3] = q[0]*qw[3] - q[1]*qw[2] + q[2]*qw[1] - q[3]*qw[0];
+
+    //natural log of e, generator of rotation
+    float lne[4];
+    float sqrv=e[1]*e[1]+e[2]*e[2]+e[3]*e[3];
+    float acos_a=asin(sqrv)*(e[0]>0.?1.:-1.); //more stable way to calculate acos(a) since v^2+a^2=1
+    float normv=sqrt(sqrv);
+    lne[0]=0.;
+    lne[1]=e[1]/normv*acos_a;
+    lne[2]=e[2]/normv*acos_a;
+    lne[3]=e[3]/normv*acos_a;
+
+    /*Serial.print(lne[1]);
+    Serial.print(", ");
+    Serial.print(lne[2]);
+    Serial.print(", ");
+    Serial.println(lne[3]);*/
+    i_roll= constrain( i_roll + lne[1]*dt, -integrateMax, integrateMax );
+    i_pitch= constrain( i_pitch + lne[2]*dt, -integrateMax, integrateMax );
+    u_roll = constrain( lne[1]*P + i_roll*I + G[0]*D, -uMax , uMax);
+    u_pitch = constrain( lne[2]*P + i_pitch*I + G[1]*D, -uMax, uMax);
+    u_skew=0.;
+    for(int i=0;i<4;i++)
+    {
+        servos[i].writeMicroseconds( (int)(1500.+constrain(u_roll*roll[i]+u_pitch*pitch[i],-maxCSus,maxCSus)) );
+    }
     ////////////////////////////OUTPUT SIGNALS////////////////////
     digitalWrite(GREEN_LED, t%100?LOW:HIGH);
     t++;

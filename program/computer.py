@@ -43,6 +43,7 @@ class Plane:
            # print dat
             try:
                 self.A=self.A*0.0+Vec3(*map(float,dat[1:4]))*1.0
+                print (self.A.x,self.A.y,self.A.z)
                 self.M=self.M*0.0+Vec3(*map(float,dat[4:7]))*1.0
                 self.P=self.P*0.9+Vec3(0,0,float(dat[7]))*0.1
                 self.T=float(dat[8])
@@ -94,14 +95,14 @@ class Plane:
         color = [1.0,0.,0.,0.8]
         glMaterialfv(GL_FRONT,GL_DIFFUSE,color)
         glPushMatrix()
-        glScalef(1,4,1)
+        glScalef(4,1,1)
         glutSolidCube(1)
         glPopMatrix()
         
         color = [0,0,1.,0.8]
         glMaterialfv(GL_FRONT,GL_DIFFUSE,color)
         glPushMatrix()
-        glScalef(6,2,0.5)
+        glScalef(2,6,0.5)
         glutSolidCube(1)
         glPopMatrix()
         if self.ledState: 
@@ -165,11 +166,15 @@ def display():
     glBegin(GL_LINES)
     for i in range(-10,11):
         glColor3f(0.5,0.1,0)
-        glVertex3f(i,-10,-3)
-        glVertex3f(i,10,-3)
+        glVertex3f(i,-10,3)
+        glVertex3f(i,10,3)
         glColor3f(0,0.4,0)
-        glVertex3f(-10,i,-3)
-        glVertex3f(10,i,-3)
+        glVertex3f(-10,i,3)
+        glVertex3f(10,i,3)
+
+        glColor3f(1,0.0,1)
+        glVertex3f(0,0,0)
+        glVertex3f(10,0,0)
     glEnd()
 
     plane.draw()
@@ -196,6 +201,8 @@ def display():
     glutBitmapString(GLUT_BITMAP_9_BY_15, 'Magnetic field: '+str(plane.M.norm()));
     glRasterPos2f( 5,45);
     glutBitmapString(GLUT_BITMAP_9_BY_15, 'Inclination: '+str( np.arccos(-(plane.M*plane.A)/plane.M.norm()/plane.A.norm())/np.pi*180. ));
+    glRasterPos2f( 5,55);
+    glutBitmapString(GLUT_BITMAP_9_BY_15, 'Pitch: '+str( np.arctan(-np.sqrt(plane.A.x**2+plane.A.y**2)/plane.A.z)/np.pi*180. ));
     glPopMatrix()
 
     glMatrixMode(GL_PROJECTION);
@@ -214,9 +221,9 @@ def reshape(width, height):
     gluPerspective(40.,(float(width))/height,0.1,400.)
     glMatrixMode(GL_MODELVIEW)
     glLoadIdentity()
-    gluLookAt(0,16,0,
+    gluLookAt(0,16,-4,
                0,0 ,0,
-               0,0 ,1)
+               0,0 ,-1)
     glutPostRedisplay()
 
 def init():
