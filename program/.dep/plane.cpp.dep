@@ -9,11 +9,10 @@ plane.o: plane.cpp \
  /usr/share/arduino/hardware/arduino/cores/arduino/Printable.h \
  /usr/share/arduino/hardware/arduino/cores/arduino/new.h \
  /usr/share/arduino/hardware/arduino/variants/mega/pins_arduino.h \
- /usr/share/arduino/libraries/Servo/Servo.h \
  /usr/share/arduino/libraries/Wire/Wire.h \
  /usr/share/arduino/hardware/arduino/cores/arduino/Stream.h \
  libraries/LPS331/LPS331.h libraries/LSM303/LSM303.h libraries/L3G/L3G.h \
- qr_fact.c orientation.c calibrate.cpp
+ qr_fact.c orientation.c ServoFast.h calibrate.cpp
 
 /usr/share/arduino/hardware/arduino/cores/arduino/Arduino.h:
 
@@ -35,8 +34,6 @@ plane.o: plane.cpp \
 
 /usr/share/arduino/hardware/arduino/variants/mega/pins_arduino.h:
 
-/usr/share/arduino/libraries/Servo/Servo.h:
-
 /usr/share/arduino/libraries/Wire/Wire.h:
 
 /usr/share/arduino/hardware/arduino/cores/arduino/Stream.h:
@@ -50,5 +47,7 @@ libraries/L3G/L3G.h:
 qr_fact.c:
 
 orientation.c:
+
+ServoFast.h:
 
 calibrate.cpp:

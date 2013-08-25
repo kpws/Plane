@@ -23,7 +23,7 @@ class Vec3:
         return np.sqrt(self.x*self.x+self.y*self.y+self.z*self.z)
 class View:
     def __init__(self):
-        self.head=-130
+        self.head=50
         self.drawVects=True
 
 class Plane:
@@ -36,11 +36,11 @@ class Plane:
         self.ledState=False
         self.q=[1,0,0,0]
         self.T=0
-       
+
     def update(self):
         dat=self.ser.readline()[:-1].split(',')
         if dat[0]=='start' and len(dat)>=12:
-           # print dat
+            # print dat
             try:
                 self.A=self.A*0.0+Vec3(*map(float,dat[1:4]))*1.0
                 print (self.A.x,self.A.y,self.A.z)
@@ -53,6 +53,10 @@ class Plane:
         elif dat[0]=='orient' and len(dat)>=5:
             try:
                 self.q=[float(d)/100. for d in dat[1:5]]
+                '''self.q[1]=0;
+                self.q[2]=0;
+                n=np.sqrt(sum(s*s for s in self.q))
+                self.q=[s/n for s in self.q]'''
             except ValueError:
                 pass
         else:
@@ -64,13 +68,11 @@ class Plane:
         else:
             self.ser.write('ledOff\n')
     def draw(self):
-    
-        
         glPushMatrix()
         q0,q1,q2,q3=self.q
-        glMultMatrixf([ q0**2+q1**2-q2**2-q3**2,  2*(q1*q2-q0*q3),          2*(q1*q3+q0*q2),         0,
-                        2*(q1*q2+q0*q3),          q0**2-q1**2+q2**2-q3**2,  2*(q2*q3-q0*q1),         0,
-                        2*(q1*q3-q0*q2),          2*(q2*q3+q0*q1),          q0**2-q1**2-q2**2+q3**2, 0,
+        glMultMatrixf([ q0**2+q1**2-q2**2-q3**2,  2*(q1*q2+q0*q3),          2*(q1*q3-q0*q2),         0,
+                        2*(q1*q2-q0*q3),          q0**2-q1**2+q2**2-q3**2,  2*(q2*q3+q0*q1),         0,
+                        2*(q1*q3+q0*q2),          2*(q2*q3-q0*q1),          q0**2-q1**2-q2**2+q3**2, 0,
                         0,                        0,                        0,                       1])
         
         if view.drawVects:
@@ -98,7 +100,7 @@ class Plane:
         glScalef(4,1,1)
         glutSolidCube(1)
         glPopMatrix()
-        
+
         color = [0,0,1.,0.8]
         glMaterialfv(GL_FRONT,GL_DIFFUSE,color)
         glPushMatrix()
@@ -158,7 +160,7 @@ def key(k,x,y):
 
 def display():
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-    
+
     glPushMatrix();
     glRotatef(view.head,0,0,1)
     glDisable(GL_LIGHTING) 
@@ -172,9 +174,16 @@ def display():
         glVertex3f(-10,i,3)
         glVertex3f(10,i,3)
 
-        glColor3f(1,0.0,1)
-        glVertex3f(0,0,0)
-        glVertex3f(10,0,0)
+    glColor3f(1,0.0,1)
+    glVertex3f(0,0,0)
+    glVertex3f(10,0,0)
+
+    glEnd()
+    glColor3f(1,1,0)
+    q0,q1,q2,q3=plane.q
+    glBegin(GL_LINES)
+    glVertex3f(0,0,0)
+    glVertex3f( (q0**2+q1**2-q2**2-q3**2)*10,  (2*(q1*q2+q0*q3))*10, (2*(q1*q3-q0*q2))*10)
     glEnd()
 
     plane.draw()
@@ -185,9 +194,9 @@ def display():
     glLoadIdentity();
     gluOrtho2D(0, 400, 400, 0);
     glMatrixMode(GL_MODELVIEW);
-    
+
     glDisable(GL_LIGHTING) 
-    
+
     glPushMatrix();
     glLoadIdentity();
     glColor4f(1, 0, 0, 1);
@@ -222,8 +231,8 @@ def reshape(width, height):
     glMatrixMode(GL_MODELVIEW)
     glLoadIdentity()
     gluLookAt(0,16,-4,
-               0,0 ,0,
-               0,0 ,-1)
+            0,0 ,0,
+            0,0 ,-1)
     glutPostRedisplay()
 
 def init():
