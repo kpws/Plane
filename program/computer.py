@@ -28,10 +28,11 @@ class View:
 
 class Plane:
     def __init__(self):
-        self.ser = serial.Serial('/dev/ttyACM0', 115200)
+        self.ser = serial.Serial('/dev/ttyACM1', 115200)
         self.M=Vec3()
         self.A=Vec3()
         self.P=Vec3()
+        self.Perr=Vec3()
         self.G=Vec3()
         self.ledState=False
         self.q=[1,0,0,0]
@@ -43,9 +44,9 @@ class Plane:
             # print dat
             try:
                 self.A=self.A*0.0+Vec3(*map(float,dat[1:4]))*1.0
-                print (self.A.x,self.A.y,self.A.z)
+                #print (self.A.x,self.A.y,self.A.z)
                 self.M=self.M*0.0+Vec3(*map(float,dat[4:7]))*1.0
-                self.P=self.P*0.9+Vec3(0,0,float(dat[7]))*0.1
+                #self.P=self.P*0.9+Vec3(0,0,float(dat[7]))*0.1
                 self.T=float(dat[8])
                 self.G=self.G*0.0+Vec3(*map(float,dat[9:12]))*1.0
             except ValueError:
@@ -59,8 +60,23 @@ class Plane:
                 self.q=[s/n for s in self.q]'''
             except ValueError:
                 pass
+        elif dat[0]=='analog':
+            try:
+                print '#'*((int(dat[1])-200)/7)
+            except ValueError:
+                pass
+        elif dat[0]=='ping' and len(dat)>=3:
+            try:
+                self.P.z=float(dat[1])/100.
+                self.Perr.z=np.sqrt(float(dat[2])/100.)
+                #print '#'*(int(dat[1])/40)
+            except ValueError:
+                pass
+            return True
         else:
             print dat
+        return False
+
     def toggle(self):
         self.ledState=not self.ledState
         if self.ledState:
@@ -212,6 +228,33 @@ def display():
     glutBitmapString(GLUT_BITMAP_9_BY_15, 'Inclination: '+str( np.arccos(-(plane.M*plane.A)/plane.M.norm()/plane.A.norm())/np.pi*180. ));
     glRasterPos2f( 5,55);
     glutBitmapString(GLUT_BITMAP_9_BY_15, 'Pitch: '+str( np.arctan(-np.sqrt(plane.A.x**2+plane.A.y**2)/plane.A.z)/np.pi*180. ));
+    m=4.#max(graph)
+    if m!=0:
+        glDepthMask(GL_FALSE)
+        glEnable(GL_BLEND)
+        glLineWidth(1.6)
+        glColor4f(1, .4, 0, 1);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE)
+        glBegin(GL_LINE_STRIP)
+        for i in range(len(graph)):
+            glVertex2f(float(i)/float(len(graph))*400.,200.-graph[i][0]/m*200.)
+        glEnd()
+        glColor4f(1, .4, 0, 0.3);
+        glBegin(GL_LINE_STRIP)
+        for i in range(len(graph)):
+            glVertex2f(float(i)/float(len(graph))*400.,200.-(graph[i][0]+graph[i][1])/m*200.)
+        glEnd()
+        glBegin(GL_LINE_STRIP)
+        for i in range(len(graph)):
+            glVertex2f(float(i)/float(len(graph))*400.,200.-(graph[i][0]-graph[i][1])/m*200.)
+        glEnd()
+        glBegin(GL_LINES)
+        glColor4f(1, .4, 0, 0.5);
+        glVertex2f(0.,200.)
+        glVertex2f(400.,200.)
+        glEnd()
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glDepthMask(GL_TRUE)
     glPopMatrix()
 
     glMatrixMode(GL_PROJECTION);
@@ -220,7 +263,9 @@ def display():
 
     glutSwapBuffers()
     for i in range(10):
-        plane.update()
+        if plane.update():
+            graph.append((plane.P.z,plane.Perr.z))
+            graph.pop(0)
     glutPostRedisplay()
 
 def reshape(width, height):
@@ -240,6 +285,7 @@ def init():
 
 view=View()
 plane=Plane()
+graph=[(0,1) for i in range(1000)]
 plane.update()
 init();
 initGL()

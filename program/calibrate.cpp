@@ -1,3 +1,4 @@
+#ifdef CAL
 void blink()
 {
     for(int i=0;i<10;i++)
@@ -8,7 +9,7 @@ void blink()
         delay(100);
     }
 }
-
+#endif
 /*void calG()
   {
   blink();
@@ -96,21 +97,23 @@ Gs[i]/=Gss[i];
 
 void initCal()
 {
-    calVal[0][0]=-39;
-    calVal[0][1]=3;
-    calVal[0][2]=13;
-    calVal[0][3]=1037;
-    calVal[0][4]=1034;
-    calVal[0][5]=1025;
+    //-38.97', '10.94', '-10.95', '1037.95', '1030.36', '1027.65'
+    calVal[0][0]=-39;//-39;
+    calVal[0][1]=11;//3;
+    calVal[0][2]=-11;//13;
+    calVal[0][3]=1038;//1037;
+    calVal[0][4]=1030;//1034;
+    calVal[0][5]=1028;//1025;
 
-    calVal[1][0]=82;
-    calVal[1][1]=-137;
-    calVal[1][2]=15;
-    calVal[1][3]=634;
-    calVal[1][4]=648;
-    calVal[1][5]=538;
+    //76.02', '-113.08', '-29.14', '595.99', '599.10', '499.06
+    calVal[1][0]=76;//82;
+    calVal[1][1]=-113;//-137;
+    calVal[1][2]=-29;//15;
+    calVal[1][3]=596;//634;
+    calVal[1][4]=599;//648;
+    calVal[1][5]=499;//538;
 
-    calPoints=6;
+    calPoints=0;//6;
     calPoint[0][0]=-312.30;
     calPoint[0][1]=113.75;
     calPoint[0][2]=997.30;
@@ -159,6 +162,7 @@ void initCal()
     Gc[2]=0.0;
 
 }
+#ifdef CAL
 double ellipseError(double xc,double yc,double zc,double rx,double ry,double rz,int offset,int N)
 {
     double error=0.;
@@ -363,3 +367,4 @@ void cal()
         digitalWrite(GREEN_LED,LOW);
     }
 }
+#endif
