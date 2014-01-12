@@ -228,7 +228,7 @@ def display():
     glutBitmapString(GLUT_BITMAP_9_BY_15, 'Inclination: '+str( np.arccos(-(plane.M*plane.A)/plane.M.norm()/plane.A.norm())/np.pi*180. ));
     glRasterPos2f( 5,55);
     glutBitmapString(GLUT_BITMAP_9_BY_15, 'Pitch: '+str( np.arctan(-np.sqrt(plane.A.x**2+plane.A.y**2)/plane.A.z)/np.pi*180. ));
-    m=4.#max(graph)
+    m=2.#max(graph)
     if m!=0:
         glDepthMask(GL_FALSE)
         glEnable(GL_BLEND)

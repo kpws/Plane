@@ -29,6 +29,7 @@ const int LEFT_PHOTO = 6;
 const int RIGHT_PHOTO = 7;
 const int SONAR_TRIG = 24;
 const int SONAR_ECHO = 26;
+const int VIN_MEASURE_PIN = 2;
 
 const float phi=12./180.*PI;
 const float roll[4] = {-0.67125, -0.222314, -0.222314, -0.67125};
@@ -333,16 +334,16 @@ void loop()
     }
     getOrientation(v1,v2,q,R,0.0);
     /////////////////////////////////CALCULATE VELOCITY AND POSITION///////////////
-    R[0][0]=q[0]*q[0]+q[1]*q[1]-q[2]*q[2]-q[3]*q[3];
-    R[0][1]=2.*(q[1]*q[2]+q[0]*q[3]);
+    //R[0][0]=q[0]*q[0]+q[1]*q[1]-q[2]*q[2]-q[3]*q[3];
+    //R[0][1]=2.*(q[1]*q[2]+q[0]*q[3]);
     R[0][2]=2.*(q[1]*q[3]-q[0]*q[2]);
 
-    R[1][0]=2.*(q[1]*q[2]-q[0]*q[3]);
-    R[1][1]=q[0]*q[0]-q[1]*q[1]+q[2]*q[2]-q[3]*q[3];
+    //R[1][0]=2.*(q[1]*q[2]-q[0]*q[3]);
+    //R[1][1]=q[0]*q[0]-q[1]*q[1]+q[2]*q[2]-q[3]*q[3];
     R[1][2]=2.*(q[2]*q[3]+q[0]*q[1]);
 
-    R[2][0]=2.*(q[1]*q[3]+q[0]*q[2]);
-    R[2][1]=2.*(q[2]*q[3]-q[0]*q[1]);
+    //R[2][0]=2.*(q[1]*q[3]+q[0]*q[2]);
+    //R[2][1]=2.*(q[2]*q[3]-q[0]*q[1]);
     R[2][2]=q[0]*q[0]-q[1]*q[1]-q[2]*q[2]+q[3]*q[3];
     /*
     velocity[2]+=GRAV_ACC*dt;
@@ -387,7 +388,7 @@ void loop()
     P_priori[0][0]+=accQ*dt*dt*dt*dt*dt/20.;
 
     //Kalman gain
-    float S11=P_priori[0][0]+(sonar_us==0?50.*50.:0.04*0.04);
+    float S11=P_priori[0][0]+(sonar_us==0?1e3*1e3:0.04*0.04);
     float S12=P_priori[0][2];
     float S22=P_priori[2][2]+0.2*0.2;
     float detS=S11*S22-S12*S12;
@@ -461,7 +462,9 @@ void loop()
     Serial.print(",");
     Serial.print(P_posteriori[0][0]*100.);
     Serial.println("");
-#endif
+    Serial.print(analogRead(VIN_MEASURE_PIN)*(5.*(199.+51.)/(1024.*51.)));
+    Serial.println("");
+#endif 
     ///////////////////////////////CALCULATE PHYSICAL OUTPUTS////////////////
 
     float qwni=1./sqrt(q[0]*q[0]+q[3]*q[3]);
@@ -493,38 +496,6 @@ void loop()
     Serial.print(lne[2]);
     Serial.print(", ");
     Serial.println(lne[3]);*/
-   /* us[t%3]=sonar.ping();
-    t2=0;
-    while(us[t%3]==0 && t2<-4)
-    {
-        t2++;    
-        us[t%3]=sonar.ping();
-    }
-    if(t%3==2)
-    {
-        unsigned int gus;
-        if(us[0]<us[1])
-            if(us[0]<us[2])
-                if(us[1]<us[2])
-                    gus=us[1];
-                else
-                    gus=us[2];
-            else
-                gus=us[0];
-        else
-            if(us[1]<us[2])
-                if(us[0]<us[2])
-                    gus=us[0];
-                else
-                    gus=us[2];
-            else
-                gus=us[1];
-        //if(gus==0)
-        //    position[2]=MAX_SONAR_DIST;//TODO update ground pressure here
-        //else
-        //    position[2]=gus*.5*SOUND_SPEED*1e-6;//TODO use pressure
-
-    }*/
     i_roll= constrain( i_roll + lne[1]*dt, -integrateMax, integrateMax );
     i_pitch= constrain( i_pitch + lne[2]*dt, -integrateMax, integrateMax );
     u_roll = 0.;//constrain( - lne[1]*P - i_roll*I + G[0]*D, -uMax , uMax);
