@@ -1,0 +1,1 @@
+avrdude -P /dev/ttyACM0 -b 19200 -c avrisp -p m8 -v -e -U flash:w:kda.hex

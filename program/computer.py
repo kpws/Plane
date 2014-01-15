@@ -37,6 +37,9 @@ class Plane:
         self.ledState=False
         self.q=[1,0,0,0]
         self.T=0
+        self.x=[(0,0),(0,0),(0,0),(0,0)]
+        self.Vin=0
+        self.throttle=0.
 
     def update(self):
         dat=self.ser.readline()[:-1].split(',')
@@ -65,14 +68,20 @@ class Plane:
                 print '#'*((int(dat[1])-200)/7)
             except ValueError:
                 pass
-        elif dat[0]=='ping' and len(dat)>=3:
+        elif dat[0]=='kalman' and len(dat)>=1+4*2:
             try:
-                self.P.z=float(dat[1])/100.
-                self.Perr.z=np.sqrt(float(dat[2])/100.)
-                #print '#'*(int(dat[1])/40)
+                for i in range(4):
+                    self.x[i]=(float(dat[1+i*2])/100.,float(dat[1+i*2+1])/100.)
+                self.P.z=self.x[0][0];
+                return True
             except ValueError:
                 pass
-            return True
+        elif dat[0]=='status' and len(dat)>=1+2:
+            try:
+                self.Vin=float(dat[1])
+                self.throttle=float(dat[2])
+            except ValueError:
+                pass
         else:
             print dat
         return False
@@ -83,6 +92,10 @@ class Plane:
             self.ser.write('ledOn\n')
         else:
             self.ser.write('ledOff\n')
+    def increaseThrottle(self):
+            self.ser.write('throttleUp\n')
+    def decreaseThrottle(self):
+            self.ser.write('throttleDown\n')
     def draw(self):
         glPushMatrix()
         q0,q1,q2,q3=self.q
@@ -173,6 +186,10 @@ def key(k,x,y):
         view.head+=5
     if k=='d':
         view.head-=5
+    if k=='w':
+        plane.increaseThrottle()
+    if k=='s':
+        plane.decreaseThrottle()
 
 def display():
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
@@ -228,33 +245,42 @@ def display():
     glutBitmapString(GLUT_BITMAP_9_BY_15, 'Inclination: '+str( np.arccos(-(plane.M*plane.A)/plane.M.norm()/plane.A.norm())/np.pi*180. ));
     glRasterPos2f( 5,55);
     glutBitmapString(GLUT_BITMAP_9_BY_15, 'Pitch: '+str( np.arctan(-np.sqrt(plane.A.x**2+plane.A.y**2)/plane.A.z)/np.pi*180. ));
-    m=2.#max(graph)
-    if m!=0:
-        glDepthMask(GL_FALSE)
-        glEnable(GL_BLEND)
-        glLineWidth(1.6)
-        glColor4f(1, .4, 0, 1);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE)
-        glBegin(GL_LINE_STRIP)
-        for i in range(len(graph)):
-            glVertex2f(float(i)/float(len(graph))*400.,200.-graph[i][0]/m*200.)
-        glEnd()
-        glColor4f(1, .4, 0, 0.3);
-        glBegin(GL_LINE_STRIP)
-        for i in range(len(graph)):
-            glVertex2f(float(i)/float(len(graph))*400.,200.-(graph[i][0]+graph[i][1])/m*200.)
-        glEnd()
-        glBegin(GL_LINE_STRIP)
-        for i in range(len(graph)):
-            glVertex2f(float(i)/float(len(graph))*400.,200.-(graph[i][0]-graph[i][1])/m*200.)
-        glEnd()
-        glBegin(GL_LINES)
-        glColor4f(1, .4, 0, 0.5);
-        glVertex2f(0.,200.)
-        glVertex2f(400.,200.)
-        glEnd()
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-        glDepthMask(GL_TRUE)
+    glRasterPos2f( 5,65);
+    glutBitmapString(GLUT_BITMAP_9_BY_15, 'Vin: '+str(plane.Vin)+' V');
+    glRasterPos2f( 5,75);
+    glutBitmapString(GLUT_BITMAP_9_BY_15, 'throttle: '+str(plane.throttle));
+    glDepthMask(GL_FALSE)
+    glEnable(GL_BLEND)
+    glLineWidth(1.6)
+    colors=[[1,0,0],[0.,0.4,0.2],[0.2,0,0.3],[0.3,0.3,0.3]]
+    for j in range(4):
+        m=max(abs(gi[j][0]) for gi in graph)*2.
+        if m!=0:
+            glColor4f(colors[j][0],colors[j][1],colors[j][2], 1);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE)
+            glBegin(GL_LINE_STRIP)
+            for i in range(len(graph)):
+                glVertex2f(float(i)/float(len(graph))*400.,200.-graph[i][j][0]/m*200.)
+            glEnd()
+            glColor4f(colors[j][0],colors[j][1],colors[j][2], 0.3);
+            glBegin(GL_LINE_STRIP)
+            for i in range(len(graph)):
+                glVertex2f(float(i)/float(len(graph))*400.,200.-(graph[i][j][0]+graph[i][j][1])/m*200.)
+            glEnd()
+            glBegin(GL_LINE_STRIP)
+            for i in range(len(graph)):
+                glVertex2f(float(i)/float(len(graph))*400.,200.-(graph[i][j][0]-graph[i][j][1])/m*200.)
+            glEnd()
+            glColor4f(colors[j][0],colors[j][1],colors[j][2], 1);
+            glRasterPos2f(350,15+10*j);
+            glutBitmapString(GLUT_BITMAP_9_BY_15, 'x_'+str(j+1)+' = '+str(plane.x[j][0]));
+    glBegin(GL_LINES)
+    glColor4f(1, .4, 0, 0.5);
+    glVertex2f(0.,200.)
+    glVertex2f(400.,200.)
+    glEnd()
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glDepthMask(GL_TRUE)
     glPopMatrix()
 
     glMatrixMode(GL_PROJECTION);
@@ -264,7 +290,7 @@ def display():
     glutSwapBuffers()
     for i in range(10):
         if plane.update():
-            graph.append((plane.P.z,plane.Perr.z))
+            graph.append([xi for xi in plane.x])
             graph.pop(0)
     glutPostRedisplay()
 
@@ -285,7 +311,7 @@ def init():
 
 view=View()
 plane=Plane()
-graph=[(0,1) for i in range(1000)]
+graph=[[(0,1e3) for j in range(4)] for i in range(1500)]
 plane.update()
 init();
 initGL()

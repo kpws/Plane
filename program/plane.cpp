@@ -4,6 +4,7 @@
 #include <LSM303.h>
 #include <L3G.h>
 
+#define LISTEN
 #define COMMUNICATE
 //#define CAL
 
@@ -14,8 +15,9 @@
 //#include "svdcmp.c"
 //#include "magfield.c"
 
-const float SOUND_SPEED = 340.3;
-const float GRAV_ACC = 9.82;
+const float SOUND_SPEED = 340.29;
+const float GRAV_ACC = 9.815;
+const float AIR_DENSITY = 1.225;
 
 const int WARM_UP=0;
 const int CALIBRATE=1;
@@ -30,6 +32,8 @@ const int RIGHT_PHOTO = 7;
 const int SONAR_TRIG = 24;
 const int SONAR_ECHO = 26;
 const int VIN_MEASURE_PIN = 2;
+const int LEFT_MOTOR_PIN = 6;
+const int RIGHT_MOTOR_PIN = 7;
 
 const float phi=12./180.*PI;
 const float roll[4] = {-0.67125, -0.222314, -0.222314, -0.67125};
@@ -48,7 +52,9 @@ const float integrateMax=0.3/I;
 const float maxCSus=50.*1400./165.; //Max 50 degrees control surface deflection, 500 microseconds/90 degrees
 const float uMax=1.5;
 const float landAngle=-0./180*PI;
-const float MAX_SONAR_DIST=1.0;
+const float MAX_SONAR_DIST=5.0;
+const unsigned int SONAR_RESOLUTION=50;
+unsigned int sonarCheckInterval_us;
 
 const float cosHalfLandAngle=cos(landAngle/2.);
 const float sinHalfLandAngle=sin(landAngle/2.);
@@ -56,20 +62,19 @@ const float accelerometerRelPos[3]={accelerometerPos[0]-CM[0],accelerometerPos[1
 const float cosPhi=cos(phi);
 const float sinPhi=sin(phi);
 
-Servo servos[4];
+Servo servos[6];
 
 LPS331 ps;
 LSM303 compass;
 L3G gyro;
 
-NewPing sonar(SONAR_TRIG, SONAR_ECHO, int(MAX_SONAR_DIST*100.) );
+NewPing sonar(SONAR_TRIG, SONAR_ECHO);
 
 int first;
 int mode;
-long t,t2;
+long t;
 unsigned long lmi;
 float dt;
-unsigned int us[3];
 
 float calPoint[MAX_CP][10];
 int calPoints=0;
@@ -82,11 +87,12 @@ float Be[3],Ae[3];//,Se[3];
 float B[3],A[3],G[3];//,S[3];
 //int sunSens[N_SUN_SENSORS];
 float pressure,psAltitude,psTemperature;
-unsigned int sonar_us, sonar_us_vol;
+unsigned int sonar_us_vol;
+float sonarAltitude;
 
-float x[3];//Kahlman filter state, [xpos, xvel, xacc, ypos, yvel, ...]
-float P_priori[3][3];
-float P_posteriori[3][3];
+float x[4];//Kahlman filter state, [height, vel, acc, ground measured pressure in meters]
+float P_priori[4][4];
+float P_posteriori[4][4];
 float q[4];
 float qw[4];
 
@@ -96,6 +102,8 @@ float i_pitch;
 float u_roll;
 float u_pitch;
 float u_skew;
+
+float throttle;
 
 #ifdef CAL
 #define LISTEN
@@ -125,10 +133,12 @@ void setup()
     servos[2].attach(12);
     servos[3].attach(11);
     */
-    for(int i=0;i<4;i++)
+    //servos[4].attach(LEFT_MOTOR_PIN);
+    servos[5].attach(RIGHT_MOTOR_PIN);
+    /*for(int i=0;i<4;i++)
     {
         servos[i].writeMicroseconds(1500);
-    }
+    }*/
     delay(1000);
 
     Wire.begin();
@@ -164,15 +174,20 @@ void setup()
     Ae[1]=0.;
     Ae[2]=-1.;
 
-    x[0]=1.5;
+    x[0]=1.;
     x[1]=0.;
     x[2]=0.;
-    for(int i=0;i<3;i++)
-        for(int j=0;j<3;j++)
+    x[3]=0.;
+    for(int i=0;i<4;i++)
+        for(int j=0;j<4;j++)
         {
-            P_priori[i][j]=0.0;
+            //P_priori[i][j]=0.0;
             P_posteriori[i][j]=0.0;
         }
+    P_posteriori[0][0]=1.*1.;
+    P_posteriori[1][1]=2.*2.;
+    P_posteriori[2][2]=1.*1.;
+    P_posteriori[3][3]=1e8;
 
     q[0]=1.;
     q[1]=0.;
@@ -194,11 +209,12 @@ void setup()
 
     first=100;
     t=0;
-    t2=0;
     dt=0;
-
-    sonar_us=0;
+    
+    sonarAltitude=0;
     sonar_us_vol=0;
+
+    throttle=-1.;
 }
 
 void echoCheck()
@@ -227,13 +243,23 @@ void loop()
             {
                 digitalWrite(GREEN_LED, LOW);
             }
-            else if(strncmp(buf,"cal",3)==0)
+            if(strncmp(buf,"throttleUp",10)==0)
+            {
+                throttle+=0.1;
+            }
+            if(strncmp(buf,"throttleDown",12)==0)
+            {
+                throttle-=0.1;
+            }
+#ifdef CAL
+            if(strncmp(buf,"cal",3)==0)
             {
                 if(mode==CALIBRATE)
                 {
                     cal();
                 }
             }
+#endif
         }
     }
 #endif
@@ -245,6 +271,20 @@ void loop()
     pressure = ps.readPressureMillibars();
     psTemperature = ps.readTemperatureC();
 
+    if(!sonar.running())
+    {
+        sonarAltitude = sonar_us_vol;
+        unsigned int maxTime=constrain(x[0]+3.*sqrt(P_posteriori[0][0])+0.1,0.5,MAX_SONAR_DIST)*2e6/SOUND_SPEED;
+        sonarCheckInterval_us=maxTime/SONAR_RESOLUTION;
+        sonar.ping_timer(echoCheck,sonarCheckInterval_us,maxTime);
+        sonarAltitude*=.5*SOUND_SPEED*1e-6;
+        if((sonarAltitude-x[0])*(sonarAltitude-x[0])>P_posteriori[0][0]*9. || sonarAltitude<0.05)
+            sonarAltitude=-1;
+    }
+    else
+    {
+        sonarAltitude=-1.;
+    }
     unsigned long mi=micros();
     dt=((mi-lmi)*1e-6);
     lmi=mi;
@@ -277,9 +317,7 @@ void loop()
     
     psAltitude = ps.pressureToAltitudeMeters(pressure);
 
-    sonar_us=sonar_us_vol;
-    sonar.ping_timer(echoCheck);
-
+    
 ////////////////////////////CALCULATE ORIENTATION//////////////
 
     static float v1[2][3];
@@ -332,7 +370,7 @@ void loop()
             R[i][j]=0.;
         first--;
     }
-    getOrientation(v1,v2,q,R,0.0);
+    //getOrientation(v1,v2,q,R,0.0);
     /////////////////////////////////CALCULATE VELOCITY AND POSITION///////////////
     //R[0][0]=q[0]*q[0]+q[1]*q[1]-q[2]*q[2]-q[3]*q[3];
     //R[0][1]=2.*(q[1]*q[2]+q[0]*q[3]);
@@ -354,25 +392,26 @@ void loop()
     }*/
 
     /////Kalman filter to obtain position and velocity (and acceleration)
-    float Phi[3][3]={{1., dt, dt*dt*.5},   {0.,1.0,dt},   {0.0,0.0,1.0}};
-    float x_[3];
+    float Phi[4][4]={{1., dt, dt*dt*.5,0.},   {0.,1.0,dt,0.},   {0.0,0.0,1.0,.0},  {0.0,0.0,0.0,1.0}};
+    float x_[4];
 
     //State estimate extrapolation
     x_[0]=x[0] + x[1]*dt + x[2]*.5*dt*dt;
     x_[1]=x[1] + x[2]*dt;
     x_[2]=x[2];
+    x_[3]=x[3];
     
     //Error covariance extrapolation
-    for(int j=0;j<3;j++)
-    for(int k=0;k<3;k++)
+    for(int j=0;j<4;j++)
+    for(int k=0;k<4;k++)
     {
         float s=0.;
-        for(int l=j;l<3;l++)
-        for(int m=k;m<3;m++) //diagonal Phi => start at j,k
+        for(int l=j;l<4;l++)
+        for(int m=k;m<4;m++) //diagonal Phi => start at j,k
             s+=Phi[j][l] * P_posteriori[l][m] * Phi[k][m];
         P_priori[j][k]=s;
     }
-    float accQ=1e3;
+    float accQ=4e3;
     P_priori[2][2]+=dt*accQ;
 
     P_priori[2][1]+=accQ*dt*dt*.5;
@@ -386,40 +425,62 @@ void loop()
     P_priori[1][0]+=accQ*dt*dt*dt*dt/8.;
 
     P_priori[0][0]+=accQ*dt*dt*dt*dt*dt/20.;
+    
+    const float P_STD1h=1e2/(GRAV_ACC*AIR_DENSITY); //HK observatory, looks like air pressure changes by ~1 hPa/hour
+    P_priori[3][3]+=(P_STD1h*P_STD1h/3600.)*dt;
 
     //Kalman gain
-    float S11=P_priori[0][0]+(sonar_us==0?1e3*1e3:0.04*0.04);
+    float sonVar=sonarCheckInterval_us*.5e-6*SOUND_SPEED; 
+    sonVar*=sonVar;
+    float S11=P_priori[0][0] + (sonarAltitude<0?1e3*1e3:sonVar+0.02*0.02);
     float S12=P_priori[0][2];
-    float S22=P_priori[2][2]+0.2*0.2;
-    float detS=S11*S22-S12*S12;
+    float S13=P_priori[0][0]-P_priori[0][3];
+    float S22=P_priori[2][2] + 0.3*0.3;
+    float S23=P_priori[0][2]-P_priori[2][3];
+    float S33=P_priori[0][0]+P_priori[3][3]-2.*P_priori[0][3] + 10.*10.;
+    /*float detS=S11*S22-S12*S12;
     float iS11=S22/detS;
     float iS22=S11/detS;
-    float iS12=-S12/detS;
-    float K11=P_priori[0][0]*iS11 + P_priori[0][2]*iS12;
-    float K12=P_priori[0][0]*iS12 + P_priori[0][2]*iS22;
-    float K21=P_priori[0][1]*iS11 + P_priori[1][2]*iS12;
-    float K22=P_priori[0][1]*iS12 + P_priori[1][2]*iS22;
-    float K31=P_priori[0][2]*iS11 + P_priori[2][2]*iS12;
-    float K32=P_priori[0][2]*iS12 + P_priori[2][2]*iS22;
-    
+    float iS12=-S12/detS;*/
+    float detS=S11*S22*S33 + S12*S23*S12 + S13*S12*S23 - S11*S23*S23 - S12*S12*S33 - S13*S22*S13;
+    float iS11=(S22*S33-S23*S23)/detS;
+    float iS12=(S13*S23-S33*S12)/detS;
+    float iS13=(S12*S23-S22*S13)/detS;
+    float iS22=(S11*S33-S13*S13)/detS;
+    float iS23=(S13*S12-S11*S23)/detS;
+    float iS33=(S11*S22-S12*S12)/detS;
+    float K11=P_priori[0][0]*(iS11+iS13) + P_priori[0][2]*iS12 - P_priori[0][3]*iS13;
+    float K12=P_priori[0][0]*(iS12+iS23) + P_priori[0][2]*iS22 - P_priori[0][3]*iS23;
+    float K13=P_priori[0][0]*(iS13+iS33) + P_priori[0][2]*iS23 - P_priori[0][3]*iS33;
+    float K21=P_priori[1][0]*(iS11+iS13) + P_priori[1][2]*iS12 - P_priori[1][3]*iS13;
+    float K22=P_priori[1][0]*(iS12+iS23) + P_priori[1][2]*iS22 - P_priori[1][3]*iS23;
+    float K23=P_priori[1][0]*(iS13+iS33) + P_priori[1][2]*iS23 - P_priori[1][3]*iS33;
+    float K31=P_priori[2][0]*(iS11+iS13) + P_priori[2][2]*iS12 - P_priori[2][3]*iS13;
+    float K32=P_priori[2][0]*(iS12+iS23) + P_priori[2][2]*iS22 - P_priori[2][3]*iS23;
+    float K33=P_priori[2][0]*(iS13+iS33) + P_priori[2][2]*iS23 - P_priori[2][3]*iS33;
+    float K41=P_priori[3][0]*(iS11+iS13) + P_priori[3][2]*iS12 - P_priori[3][3]*iS13;
+    float K42=P_priori[3][0]*(iS12+iS23) + P_priori[3][2]*iS22 - P_priori[3][3]*iS23;
+    float K43=P_priori[3][0]*(iS13+iS33) + P_priori[3][2]*iS23 - P_priori[3][3]*iS33;
+
     //Error covariance update
-    float M[3][3]={{1.-K11,0.,-K12}, {-K21,1.,-K22}, {-K31,.0,1.-K32}};
-    for(int j=0;j<3;j++)
-    for(int k=0;k<3;k++)
+    float M[4][4]={{1.-K11-K13,0.,-K12,K13}, {-K21-K23,1.,-K22,K23}, {-K31-K33,.0,1.-K32,K33}, {-K41-K43,.0,-K42,1.+K43}};
+    for(int j=0;j<4;j++)
+    for(int k=0;k<4;k++)
     {
         float s=0.;
-        for(int l=0;l<3;l++)
+        for(int l=0;l<4;l++)
             s+=M[j][l] * P_priori[l][k];
         P_posteriori[j][k]=s;
     }
 
     //State estimate observational update
-    float ze[2]={sonar_us*.5*SOUND_SPEED*1e-6 - x_[0],
-                 ( -1.-(R[0][2]*A[0]+R[1][2]*A[1]+R[2][2]*A[2]) )*GRAV_ACC - x_[2]};
+    float ze[3]={sonarAltitude  - x_[0],
+                 ( -1.-(R[0][2]*A[0]+R[1][2]*A[1]+R[2][2]*A[2]) )*GRAV_ACC - x_[2], psAltitude-( x_[0]-x_[3])};
 
-    x[0]=x_[0] + K11*ze[0] + K12*ze[1];
-    x[1]=x_[1] + K21*ze[0] + K22*ze[1];
-    x[2]=x_[2] + K31*ze[0] + K32*ze[1];
+    x[0]=x_[0] + K11*ze[0] + K12*ze[1] + K13*ze[2];
+    x[1]=x_[1] + K21*ze[0] + K22*ze[1] + K23*ze[2];
+    x[2]=x_[2] + K31*ze[0] + K32*ze[1] + K33*ze[2];
+    x[3]=x_[3] + K41*ze[0] + K42*ze[1] + K43*ze[2];
     ////////////////////////////////////OUTPUT SERIAL DATA/////////////////////////
 #ifdef COMMUNICATE
       Serial.print("start,");
@@ -456,13 +517,20 @@ void loop()
     //Serial.print("analog,");
     //Serial.print(analogRead(RIGHT_PHOTO));
     //Serial.println("");
-    Serial.print("ping,");
+    Serial.print("kalman,");
     //Serial.print(1e2*sqrt(P_posteriori[0][0]));
-    Serial.print(x[0]*100.);
-    Serial.print(",");
-    Serial.print(P_posteriori[0][0]*100.);
+    for(int i=0;i<4;i++)
+    {
+        Serial.print(x[i]*100.);
+        Serial.print(",");
+        Serial.print(P_posteriori[i][i]*100.);
+        Serial.print(",");
+    }
     Serial.println("");
-    Serial.print(analogRead(VIN_MEASURE_PIN)*(5.*(199.+51.)/(1024.*51.)));
+    Serial.print("status,");
+    Serial.print(analogRead(VIN_MEASURE_PIN)*(4.75*(199.+51.)/(1024.*51.))); //5V pin seems to be ~4.75V
+    Serial.print(",");
+    Serial.print(throttle); //5V pin seems to be ~4.75V
     Serial.println("");
 #endif 
     ///////////////////////////////CALCULATE PHYSICAL OUTPUTS////////////////
@@ -500,13 +568,13 @@ void loop()
     i_pitch= constrain( i_pitch + lne[2]*dt, -integrateMax, integrateMax );
     u_roll = 0.;//constrain( - lne[1]*P - i_roll*I + G[0]*D, -uMax , uMax);
     u_pitch = 0.;//-uMax+2.*uMax*constrain(x[0]/MAX_SONAR_DIST,0.,1.);  //constrain( - lne[2]*P - i_pitch*I + G[1]*D, -uMax, uMax);
-    if(us==0) u_pitch=uMax;
     u_skew=0.;
     for(int i=0;i<4;i++)
     {
         //servos[i].writeMicroseconds( (int)(1500.+constrain(u_roll*roll[i]+u_pitch*pitch[i],-1.,1.)*maxCSus) );
     }
+    servos[5].writeMicroseconds((int ) (1500.+1000.*throttle));
     ////////////////////////////OUTPUT SIGNALS////////////////////
-    digitalWrite(GREEN_LED, (t%100==0)!=(sonar_us==0)?LOW:HIGH);
+    digitalWrite(GREEN_LED, (t%100==0)!=(sonarAltitude<0.)?LOW:HIGH);
     t++;
 }

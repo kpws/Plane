@@ -12,7 +12,7 @@
 // NewPing constructor
 // ---------------------------------------------------------------------------
 
-NewPing::NewPing(uint8_t trigger_pin, uint8_t echo_pin, int max_cm_distance) {
+NewPing::NewPing(uint8_t trigger_pin, uint8_t echo_pin){//, int max_cm_distance) {
 	_triggerBit = digitalPinToBitMask(trigger_pin); // Get the port register bitmask for the trigger pin.
 	_echoBit = digitalPinToBitMask(echo_pin);       // Get the port register bitmask for the echo pin.
 
@@ -21,66 +21,23 @@ NewPing::NewPing(uint8_t trigger_pin, uint8_t echo_pin, int max_cm_distance) {
 
 	_triggerMode = (uint8_t *) portModeRegister(digitalPinToPort(trigger_pin)); // Get the port mode register for the trigger pin.
 
-	_maxEchoTime = min(max_cm_distance, MAX_SENSOR_DISTANCE) * US_ROUNDTRIP_CM + (US_ROUNDTRIP_CM / 2); // Calculate the maximum distance in uS.
+	//_maxEchoTime = min(max_cm_distance, MAX_SENSOR_DISTANCE) * US_ROUNDTRIP_CM + (US_ROUNDTRIP_CM / 2); // Calculate the maximum distance in uS.
 
 #if DISABLE_ONE_PIN == true
 	*_triggerMode |= _triggerBit; // Set trigger pin to output.
 #endif
+    _isRunning=false;
 }
 
 
 // ---------------------------------------------------------------------------
 // Standard ping methods
 // ---------------------------------------------------------------------------
-
-unsigned int NewPing::ping() {
-	if (!ping_trigger()) return NO_ECHO;                // Trigger a ping, if it returns false, return NO_ECHO to the calling function.
-	while (*_echoInput & _echoBit)                      // Wait for the ping echo.
-		if (micros() > _max_time) return NO_ECHO;       // Stop the loop and return NO_ECHO (false) if we're beyond the set maximum distance.
-	return (micros() - (_max_time - _maxEchoTime) - 5); // Calculate ping time, 5uS of overhead.
-}
-
-
-unsigned int NewPing::ping_in() {
-	unsigned int echoTime = NewPing::ping();          // Calls the ping method and returns with the ping echo distance in uS.
-	return NewPingConvert(echoTime, US_ROUNDTRIP_IN); // Convert uS to inches.
-}
-
-
-unsigned int NewPing::ping_cm() {
-	unsigned int echoTime = NewPing::ping();          // Calls the ping method and returns with the ping echo distance in uS.
-	return NewPingConvert(echoTime, US_ROUNDTRIP_CM); // Convert uS to centimeters.
-}
-
-
-unsigned int NewPing::ping_median(uint8_t it) {
-	unsigned int uS[it], last;
-	uint8_t j, i = 0;
-	uS[0] = NO_ECHO;
-	while (i < it) {
-		last = ping();           // Send ping.
-		if (last == NO_ECHO) {   // Ping out of range.
-			it--;                // Skip, don't include as part of median.
-			last = _maxEchoTime; // Adjust "last" variable so delay is correct length.
-		} else {                       // Ping in range, include as part of median.
-			if (i > 0) {               // Don't start sort till second ping.
-				for (j = i; j > 0 && uS[j - 1] < last; j--) // Insertion sort loop.
-					uS[j] = uS[j - 1]; // Shift ping array to correct position for sort insertion.
-			} else j = 0;              // First ping is starting point for sort.
-			uS[j] = last;              // Add last ping to array in sorted position.
-			i++;                       // Move to next ping.
-		}
-		if (i < it) delay(PING_MEDIAN_DELAY - (last >> 10)); // Millisecond delay between pings.
-	}
-	return (uS[it >> 1]); // Return the ping distance median.
-}
-
-
 // ---------------------------------------------------------------------------
 // Standard ping method support functions (not called directly)
 // ---------------------------------------------------------------------------
 
-boolean NewPing::ping_trigger() {
+boolean NewPing::ping_trigger(unsigned int maxTime_us) {
 #if DISABLE_ONE_PIN != true
 	*_triggerMode |= _triggerBit;    // Set trigger pin to output.
 #endif
@@ -97,8 +54,8 @@ boolean NewPing::ping_trigger() {
 	while (*_echoInput & _echoBit && micros() <= _max_time) {} // Wait for echo pin to clear.
 	while (!(*_echoInput & _echoBit))                          // Wait for ping to start.
 		if (micros() > _max_time) return false;                // Something went wrong, abort.
-
-	_max_time = micros() + _maxEchoTime; // Ping started, set the timeout.
+    _maxEchoTime=maxTime_us;
+	_max_time = micros() + maxTime_us; // Ping started, set the timeout.
 	return true;                         // Ping started successfully.
 }
 
@@ -107,21 +64,24 @@ boolean NewPing::ping_trigger() {
 // Timer interrupt ping methods (won't work with ATmega8 and ATmega128)
 // ---------------------------------------------------------------------------
 
-void NewPing::ping_timer(void (*userFunc)(void)) {
-	if (!ping_trigger()) return;         // Trigger a ping, if it returns false, return without starting the echo timer.
-	timer_us(ECHO_TIMER_FREQ, userFunc); // Set ping echo timer check every ECHO_TIMER_FREQ uS.
+void NewPing::ping_timer(void (*userFunc)(void), unsigned int updateInterval_us,unsigned int maxTime_us) {
+	if (!ping_trigger(maxTime_us)) return;         // Trigger a ping, if it returns false, return without starting the echo timer.
+	timer_us(updateInterval_us, userFunc); // Set ping echo timer check every ECHO_TIMER_FREQ uS.
+    _isRunning=true;
 }
 
  
 boolean NewPing::check_timer() {
 	if (micros() > _max_time) { // Outside the timeout limit.
 		timer_stop();           // Disable timer interrupt
+        _isRunning=false;
         ping_result = NO_ECHO;
 		return true;           // Cancel ping timer.
 	}
 
 	if (!(*_echoInput & _echoBit)) { // Ping echo received.
 		timer_stop();                // Disable timer interrupt
+        _isRunning=false;
 		ping_result = (micros() - (_max_time - _maxEchoTime) - 13); // Calculate ping time, 13uS of overhead.
 		return true;                 // Return ping echo true.
 	}
@@ -129,6 +89,10 @@ boolean NewPing::check_timer() {
 	return false; // Return false because there's no ping echo yet.
 }
 
+boolean NewPing::running()
+{
+    return _isRunning;
+}
 
 // ---------------------------------------------------------------------------
 // Timer2/Timer4 interrupt methods (can be used for non-ultrasonic needs)
@@ -217,16 +181,3 @@ ISR(TIMER2_COMPA_vect) {
 	if(intFunc) intFunc(); // If wrapped function is set, call it.
 }
 
-
-// ---------------------------------------------------------------------------
-// Conversion methods (rounds result to nearest inch or cm).
-// ---------------------------------------------------------------------------
-
-unsigned int NewPing::convert_in(unsigned int echoTime) {
-	return NewPingConvert(echoTime, US_ROUNDTRIP_IN); // Convert uS to inches.
-}
-
-
-unsigned int NewPing::convert_cm(unsigned int echoTime) {
-	return NewPingConvert(echoTime, US_ROUNDTRIP_CM); // Convert uS to centimeters.
-}
